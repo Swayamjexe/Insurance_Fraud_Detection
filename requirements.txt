@@ -4,4 +4,6 @@ seaborn
 scikit-learn
 imblearn
 streamlit
+xlsxwriter
+openpypxl
 -e .

@@ -2,10 +2,11 @@ import os
 import sys
 from dataclasses import dataclass
 from sklearn.svm import SVC
-from sklearn.metrics import f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
 from src.exception import CustomException
 from src.logger import logging
-from src.utils import save_object, evaluate_models
+from src.utils import save_object
 
 @dataclass
 class ModelTrainerConfig:
@@ -17,7 +18,7 @@ class ModelTrainer:
 
     def initiate_model_trainer(self, train_array, test_array):
         try:
-            logging.info("Splitting training and testing data")
+            logging.info("Split training and testing input data")
             X_train, y_train, X_test, y_test = (
                 train_array[:, :-1],
                 train_array[:, -1],
@@ -25,47 +26,55 @@ class ModelTrainer:
                 test_array[:, -1],
             )
 
-            models = {
-                "Support Vector Classifier": SVC(probability=True),
+            # Define SVC parameters as in notebook
+            svc_param_grid = {
+                'kernel': ['rbf'],
+                'gamma': [0.001, 0.01, 0.1, 1],
+                'C': [1, 10, 50, 100, 200, 300, 1000]
             }
 
-            params = {
-                "Support Vector Classifier": {
-                    'C': [10],
-                    'gamma': [0.01],
-                    'kernel': ['rbf'],
-                },
-            }
+            # Create KFold object
+            kfold = StratifiedKFold(n_splits=10)
 
-            model_report = evaluate_models(
-                X_train=X_train,
-                y_train=y_train,
-                X_test=X_test,
-                y_test=y_test,
-                models=models,
-                param=params,
+            # Create and train SVC model with GridSearch
+            svc = SVC(probability=True)
+            grid_search = GridSearchCV(
+                svc,
+                param_grid=svc_param_grid,
+                cv=kfold,
+                scoring="accuracy",
+                n_jobs=4,
+                verbose=1
             )
+            
+            grid_search.fit(X_train, y_train)
+            
+            # Get best model
+            best_model = grid_search.best_estimator_
 
-            best_model_score = max(model_report.values())
-            best_model_name = list(model_report.keys())[
-                list(model_report.values()).index(best_model_score)
-            ]
-            best_model = models[best_model_name]
+            # Make predictions
+            y_train_pred = best_model.predict(X_train)
+            y_test_pred = best_model.predict(X_test)
 
-            if best_model_score < 0.6:
-                raise CustomException("No best model found")
+            # Calculate metrics
+            logging.info(f"Training Accuracy: {grid_search.score(X_train, y_train)}")
+            logging.info(f"Testing Accuracy: {grid_search.score(X_test, y_test)}")
+            
+            logging.info("\nClassification Report:")
+            logging.info(f"\n{classification_report(y_test, y_test_pred)}")
 
-            logging.info(f"Best model selected: {best_model_name}")
-
+            # Save the model
             save_object(
                 file_path=self.model_trainer_config.trained_model_file_path,
-                obj=best_model,
+                obj=best_model
             )
 
-            predictions = best_model.predict(X_test)
-            f1 = f1_score(y_test, predictions)
-
-            return f1
+            return {
+                'Accuracy': accuracy_score(y_test, y_test_pred),
+                'Precision': precision_score(y_test, y_test_pred),
+                'Recall': recall_score(y_test, y_test_pred),
+                'F1 Score': f1_score(y_test, y_test_pred)
+            }
 
         except Exception as e:
             raise CustomException(e, sys)
