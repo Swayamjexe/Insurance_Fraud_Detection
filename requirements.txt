@@ -5,5 +5,5 @@ scikit-learn
 imblearn
 streamlit
 xlsxwriter
-openpypxl
+openpyxl
 -e .
